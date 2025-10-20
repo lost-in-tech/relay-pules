@@ -38,7 +38,31 @@ internal sealed class MessageListener(
             var consumer = new AsyncEventingBasicConsumer(channel);
             consumer.Received += async (_, args) =>
             {
-                await subscriber.Subscribe(channel, queue, args, ct);
+                // Use the consumer's current model to avoid using a stale/closed channel after recovery
+                await subscriber.Subscribe(consumer.Model, queue, args, ct);
+            };
+            consumer.ConsumerCancelled += (_, args) =>
+            {
+                logger.LogWarning("RabbitMQ consumer cancelled, {tags}", args.ConsumerTags?.Join(","));
+                return Task.CompletedTask;
+            };
+
+            consumer.Unregistered += (_, args) =>
+            {
+                logger.LogWarning("RabbitMQ consumer unregistered, {tags}", args.ConsumerTags?.Join(","));
+                return Task.CompletedTask;
+            };
+
+            consumer.Registered += (_, args) =>
+            {
+                logger.LogInformation("RabbitMQ consumer registered. {tags}", args.ConsumerTags?.Join(","));
+                return Task.CompletedTask;
+            };
+
+            consumer.Shutdown += (_, args) =>
+            {
+                logger.LogError("RabbitMQ consumer shutdown. {tags}", args.Cause);
+                return Task.CompletedTask;
             };
             
             if (queue.PrefetchCount is > 0)
@@ -47,6 +71,11 @@ internal sealed class MessageListener(
             }
 
             channel.BasicConsume(queue.Name, false, Guid.NewGuid().ToString(), false, false, null, consumer);
+
+            channel.ModelShutdown += (_, args) =>
+            {
+                logger.LogError("RabbitMQ channel shutdown, {cause}", args.Cause);
+            };
             
             _channels.Add(channel);
         }

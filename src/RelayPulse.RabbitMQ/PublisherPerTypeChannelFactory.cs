@@ -14,9 +14,28 @@ internal sealed class PublisherDefaultChannelFactory(
     IRabbitMqConnectionInstance connection) 
     : IChannelFactory
 {
-    private readonly Lazy<IModel> _lazyChannel = new(() => connection.Get().CreateModel());
+    private readonly object _lock = new();
+    private IModel? _channel;
 
-    public IModel GetOrCreate(string key) => _lazyChannel.Value;
+    public IModel GetOrCreate(string key)
+    {
+        if (_channel is { IsClosed: false }) return _channel;
+
+        lock (_lock)
+        {
+            if (_channel is { IsClosed: false }) return _channel;
+
+            try
+            {
+                _channel?.Close();
+            }
+            catch { /* ignore */ }
+            _channel?.Dispose();
+
+            _channel = connection.Get().CreateModel();
+            return _channel;
+        }
+    }
 
     public bool IsApplicable(string key, bool forPublisher)
     {
@@ -25,10 +44,11 @@ internal sealed class PublisherDefaultChannelFactory(
     
     public void Dispose()
     {
-        if (_lazyChannel is { IsValueCreated: true, Value.IsClosed: false })
+        if (_channel is { IsClosed: false })
         {
-            _lazyChannel.Value.Close();
+            _channel.Close();
         }
+        _channel?.Dispose();
     }
 
 }

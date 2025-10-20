@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 
 namespace RelayPulse.RabbitMQ;
@@ -16,7 +17,8 @@ internal sealed class RabbitMqConnectionInstance : IRabbitMqConnectionInstance
 {
     private readonly Lazy<IConnection> _instance;
     
-    public RabbitMqConnectionInstance(IRabbitMqConnectionSettings settings)
+    public RabbitMqConnectionInstance(IRabbitMqConnectionSettings settings,
+        ILogger<RabbitMqConnectionInstance> logger)
     {
         _instance = new Lazy<IConnection>(() =>
         {
@@ -29,7 +31,26 @@ internal sealed class RabbitMqConnectionInstance : IRabbitMqConnectionInstance
                 Uri = new Uri(settings.Uri)
             };
 
-            return factory.CreateConnection();
+            var connection = factory.CreateConnection();
+
+            logger.LogInformation("RabbitMQ connection established.", settings.Uri);
+
+            connection.ConnectionShutdown += (_, args) =>
+            {
+                logger.LogWarning("RabbitMQ connection shutdown. Reason: {reason}", args.Cause);
+            };
+
+            connection.ConnectionBlocked += (_, args) =>
+            {
+                logger.LogWarning("RabbitMQ connection blocked. Reason: {reason}", args.Reason);
+            };
+
+            connection.ConnectionUnblocked += (_, args) =>
+            {
+                logger.LogInformation("RabbitMQ connection unblocked.");
+            };
+
+            return connection;
         });
     }
 

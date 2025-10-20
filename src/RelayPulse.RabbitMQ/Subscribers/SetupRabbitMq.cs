@@ -14,7 +14,7 @@ internal class SetupRabbitMq(
 
         var exchangeCreated = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        var channel = connectionInstance.Get().CreateModel();
+        using var channel = connectionInstance.Get().CreateModel();
 
         foreach (var queue in settings.Queues)
         {
